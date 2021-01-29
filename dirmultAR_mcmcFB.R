@@ -1,10 +1,10 @@
-multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0.1,6,6),
-                            mra=10,tint=NULL,tahead=1,output=FALSE,disp=TRUE,tin=10,
-                            LAmin=matrix(NA,6,6),LAmax=matrix(NA,6,6),conbe=FALSE,
-                            degree=2,Y_new=NULL){
+dirmultAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0.1,6,6),
+                             mra=10,tint=NULL,tahead=1,output=FALSE,disp=TRUE,tin=10,
+                             ORmin=matrix(NA,6,6),ORmax=matrix(NA,6,6),conbe=FALSE,
+                             degree=2,Y_new=NULL){
 
   
-# ADD TOT E DIFF
+# WITH DIRICHLET-MULTINOMIAL MODEL with dispersion parameters
 
 # Estimate multinomial AR model for COVID-19 data by an MCMC algorithm
 # Categories must be ordered as:
@@ -22,8 +22,8 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
 # output = TRUE for providing all estimated matrices at each MCMC iteration
 # disp   = to disply prediction during estimation
 # tin    = store results each tin iterations
-# LAmin  = matrix of lower limits of OR
-# LAmax  = matrix of upper limits of OR
+# ORmin  = matrix of lower limits of OR
+# ORmax = matrix of upper limits of OR
 # conbe  = contraint 2° order coefficients in the polinomials to be non-positive
 #
 # OUTPUT:
@@ -96,10 +96,10 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
     i = Ind[h,1]; j = Ind[h,2]
     if(j!=i){
       if(!is.null(mBE)) BE[i,j,] = mBE[i,j,]
-      if(!is.na(LAmin[i,j]) & is.na(LAmax[i,j])) BE[i,j,1] = max(BE[i,j,1],log(LAmin[i,j]))
-      if(is.na(LAmin[i,j]) & !is.na(LAmax[i,j])) BE[i,j,1] = min(BE[i,j,1],log(LAmax[i,j]))
-      if(!is.na(LAmin[i,j]) & !is.na(LAmax[i,j])){
-        if(BE[i,j,1]<log(LAmin[i,j]) | BE[i,j,1]>log(LAmax[i,j])) BE[i,j,1] = log((LAmin[i,j]+LAmax[i,j])/2)
+      if(!is.na(ORmin[i,j]) & is.na(ORmax[i,j])) BE[i,j,1] = max(BE[i,j,1],log(ORmin[i,j]))
+      if(is.na(ORmin[i,j]) & !is.na(ORmax[i,j])) BE[i,j,1] = min(BE[i,j,1],log(ORmax[i,j]))
+      if(!is.na(ORmin[i,j]) & !is.na(ORmax[i,j])){
+        if(BE[i,j,1]<log(ORmin[i,j]) | BE[i,j,1]>log(ORmax[i,j])) BE[i,j,1] = log((ORmin[i,j]+ORmax[i,j])/2)
       }
     }
   }
@@ -110,13 +110,13 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
   LAC = array(0,c(6,6,TT+tahead))
   LAC[,,1] = NA
   for(h in 1:27) LAC[Ind[h,1],Ind[h,2],2:(TT+tahead)] = exp(XXC%*%BE[Ind[h,1],Ind[h,2],])
+  ORC = LAC
   if(is.null(mBE)) si2 = 100
 
 # iterate
-  acctab = accbe = 0
-  Accbe = matrix(0,6,6)
-  Accbe[2:6,1] = Accbe[6,2:5] = NA
-  diag(Accbe) = NA
+  acctab = accbe = accnu = 0
+  Accbe = matrix(0,5,6)
+  Accbe[2:5,1] = NA
   TTAB = array(as.integer(0),c(6,6,TT,R/tin))
   TTAB[,,,1] = NA
   BBE = array(0,c(6,6,nbe,R/tin))
@@ -127,8 +127,9 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
   RT_new = matrix(0,tahead,R/tin)
   CHI2 = CHI2_SIM = rep(0,R/tin)
   if(!is.null(Y_new)){
-    CHI2_new = CHI2_SIM_new = rep(0,R/tin)
     tahead1 = nrow(Y_new)
+    CHI2_new = CHI2_SIM_new = matrix(0,R/tin,tahead1)
+    Y_new = as.matrix(Y_new)
   }
   it = 0
   t0 = proc.time()[3]; names(t0) = NULL
@@ -138,7 +139,7 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
 
 # update table
     for(t in 2:TT){
-      P = PP[,,t]
+      La = LA[,,t]; P = PP[,,t]
       for(it1 in 1){
       	tmp = sample(1:5,2); i1 = min(tmp); i2 = max(tmp)
       	tmp = sample(2:6,2); j1 = min(tmp); j2 = max(tmp)
@@ -150,13 +151,16 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
         Tabs[i2,j2] = Tab[i2,j2]+ra
         # if(t==TT) browser()
         if(all(Tabs>=0)){
-          P1 = c(P[i1,j1],P[i1,j2],P[i2,j1],P[i2,j2])
-          Tab1 = c(Tab[i1,j1],Tab[i1,j2],Tab[i2,j1],Tab[i2,j2]) 
-          Tabs1 = c(Tabs[i1,j1],Tabs[i1,j2],Tabs[i2,j1],Tabs[i2,j2])
-          al = exp(sum(log(P1)*(Tabs1-Tab1)+lgamma(Tab1+1)-lgamma(Tabs1+1))) 
+          lnum = sum(lgamma(Tabs[i1,c(j1,j2)]+La[i1,c(j1,j2)])-lgamma(Tabs[i1,c(j1,j2)]+1)+
+                     lgamma(Tabs[i2,c(j1,j2)]+La[i2,c(j1,j2)])-lgamma(Tabs[i2,c(j1,j2)]+1))
+          lden = sum(lgamma(Tab[i1,c(j1,j2)]+La[i1,c(j1,j2)])-lgamma(Tab[i1,c(j1,j2)]+1)+
+                     lgamma(Tab[i2,c(j1,j2)]+La[i2,c(j1,j2)])-lgamma(Tab[i2,c(j1,j2)]+1))
+          al = exp(lnum-lden)
+          # al1 = exp(lnum-lden)
+          # print(c(al,al1,al/al1-1))
           if(is.nan(al)){
-           	print("NA in updating tables")
-            	browser()
+            print("NA in updating tables")
+            browser()
           }
           if(runif(1)<=al){
             TAB[,,t] = Tabs
@@ -169,26 +173,32 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
 # update beta
     for(h in 1:27){
       i = Ind[h,1]; j = Ind[h,2]
-      if(j!=i){
-        BES = BE; LAS = LA; LACS = LAC; PPS = PP
+      if(i<6){
+        ind = Ind[Ind[,1]==i,2]
+        BES = BE; LAS = LA; LACS = LAC; ORCS = ORC; PPS = PP
         BES[i,j,] = BE[i,j,]+rnorm(nbe,0,Tau[i,j])
         LAS[i,j,2:TT] = exp(XX%*%BES[i,j,])
         LACS[i,j,2:(TT+tahead)] = exp(XXC%*%BES[i,j,])
         for(t in 2:TT) PPS[i,,t] = LAS[i,,t]/sum(LAS[i,,t])
+        for(t in 2:(TT+tahead)) ORCS[i,,t] = LACS[i,,t]/LACS[i,i,t]
         check = TRUE
         if(conbe) if(BES[i,j,3]>0) check=FALSE
-        if(!is.na(LAmin[i,j])) if(any(LACS[i,j,2:(TT+tahead)]<LAmin[i,j])) check = FALSE
-        if(!is.na(LAmax[i,j])) if(any(LACS[i,j,2:(TT+tahead)]>LAmax[i,j])) check = FALSE
+        for(j1 in ind) if(j1!=i){
+          if(!is.na(ORmin[i,j1])) if(any(ORCS[i,j1,2:(TT+tahead)]<ORmin[i,j1])) check = FALSE
+          if(!is.na(ORmax[i,j1])) if(any(ORCS[i,j1,2:(TT+tahead)]>ORmax[i,j1])) check = FALSE
+        }
         if(check){
-          ind = Ind[Ind[,1]==i,2]
           if(is.null(mBE)){
             tmp = ldnorm1(BES[i,j,],BE[i,j,],si2)
           }else{
             tmp = ldmvnorm1(BES[i,j,],BE[i,j,],mBE[i,j,],iVBE[i,j,,])
           }
           for(t in 2:TT){
-            P = PP[,,t]; PS = PPS[,,t]
-            tmp = tmp+c(TAB[i,ind,t]%*%(log(PS[i,ind])-log(P[i,ind])))
+            La = LA[,,t]; Las = LAS[,,t]
+            tla = sum(La[i,ind]); tlas = sum(Las[i,ind])
+            ntab = sum(TAB[i,ind,t])
+            tmp = tmp + lgamma(tlas)-lgamma(ntab+tlas)+sum(lgamma(TAB[i,ind,t]+Las[i,ind])-lgamma(Las[i,ind]))-
+                        lgamma(tla)+lgamma(ntab+tla)-sum(lgamma(TAB[i,ind,t]+La[i,ind])-lgamma(La[i,ind]))
           }
           al = exp(tmp)
           if(is.nan(al)){
@@ -196,8 +206,8 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
             browser()
           }
           if(runif(1)<=al){
-            BE = BES; LA = LAS; LAC = LACS; PP = PPS
-            accbe = accbe + 1/21
+            BE = BES; LA = LAS; LAC = LACS; ORC = ORCS; PP = PPS
+            accbe = accbe + 1/26
             Accbe[i,j] = Accbe[i,j]+1
           }
         }
@@ -205,20 +215,23 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
     }
 
 # Chi2 for prediction error
-    PP1 = PP
-    # for(t in 2:TT) for(i in 1:6) PP1[i,,t] = c(rdirichlet(1,PP[i,,t]*10^5))
+if((r>0 & r%%tin==0) | r%%250==0){
     chi2 = chi2_sim = rep(0,6)
     for(t in 2:TT){
       tmp = colSums(Y[t-1,]*PP[,,t])
       chi2 = chi2+(Y[t,]-tmp)^2/tmp
       Tmp = matrix(0,6,6)
-      for(i in 1:6) Tmp[i,] = rmultinom(1,Y[t-1,i],PP1[i,,t])
+      for(i in 1:5){
+        ind = Ind[Ind[,1]==i,2]
+        Tmp[i,ind] = rdirmnom(1,Y[t-1,i],LA[i,ind,t])
+      }
+      Tmp[6,6] = Y[t-1,6]
       tmp2 = colSums(Tmp)
       chi2_sim = chi2_sim+(tmp2-tmp)^2/tmp
     }
     Chi2 = sum(chi2); Chi2_sim = sum(chi2_sim)
+}
 
-    
 # Estimate Rt
     if((r>0 & r%%tin==0) | r%%250==0){
       newill = rep(0,TT+tahead); Rt = rep(0,TT)
@@ -232,36 +245,45 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
     }
 
 # Prediction
-    if((r>0 & r%%tin==0) | r%%250==0){    
+    if((r>0 & r%%tin==0) | r%%250==0){
       LA_new = PP_new = TAB_new = array(0,c(6,6,tahead))
       Tot_new = Diff_new = matrix(0,tahead,8)
       Rt_new = rep(0,tahead)
       for(h in 1:27) LA_new[Ind[h,1],Ind[h,2],] = exp(XX_new%*%BE[Ind[h,1],Ind[h,2],])
       for(t in 1:tahead) PP_new[,,t] = (1/rowSums(LA_new[,,t]))*LA_new[,,t]
-      for(i in 1:6) TAB_new[i,,1] = rmultinom(1,Y[TT,i],PP_new[i,,1])
+      for(i in 1:5){
+        ind = Ind[Ind[,1]==i,2]
+        TAB_new[i,ind,1] = rdirmnom(1,Y[TT,i],LA_new[i,ind,1])
+      }
+      TAB_new[6,6,1] = Y[TT,6]
       Tot_new[1,1:6] = colSums(TAB_new[,,1])
       Tot_new[1,7] = sum(Tot_new[1,3:5])
       Tot_new[1,8] = sum(Tot_new[1,2:6])
       if(!is.null(Y_new)){
+        Chi2_new = Chi2_sim_new = rep(0,tahead1)
         pred_new = colSums(Y[TT,]*PP_new[,,1])
-        chi2_new = (Y_new[1,]-pred_new)^2/pred_new
-        chi2_sim_new = (Tot_new[1,1:6]-pred_new)^2/pred_new
+        Chi2_new[1] = sum((Y_new[1,]-pred_new)^2/pred_new)
+        Chi2_sim_new[1] = sum((Tot_new[1,1:6]-pred_new)^2/pred_new)
       }
       Diff_new[1,] = Tot_new[1,]-c(Y[TT,],sum(Y[TT,3:5]),sum(Y[TT,-1]))
-      t1= TT+1
+      t1 = TT+1
       newill[t1] = sum(Y[TT,1]*PP_new[1,-1,1])
       phi = dgamma(1:(t1-2),shape=1.87,rate=0.28)
       phi = phi/sum(phi)
       Rt_new[1] = newill[t1]/sum(phi*newill[(t1-1):2])
       if(tahead>1) for(t in 2:tahead){
-        for(i in 1:6) TAB_new[i,,t] = rmultinom(1,Tot_new[t-1,i],PP_new[i,,t])
+        for(i in 1:5){
+          ind = Ind[Ind[,1]==i,2]
+          TAB_new[i,ind,t] = rdirmnom(1,Tot_new[t-1,i],LA_new[i,ind,t])
+        }
+        TAB_new[6,6,t] = Tot_new[t-1,6]
         Tot_new[t,1:6] = colSums(TAB_new[,,t])
         Tot_new[t,7] = sum(Tot_new[t,3:5])
         Tot_new[t,8] = sum(Tot_new[t,2:6])
         if(!is.null(Y_new)) if(t<=tahead1){
           pred_new = colSums(pred_new*PP_new[,,t])
-          chi2_new = chi2_new+(Y_new[t,]-pred_new)^2/pred_new
-          chi2_sim_new = chi2_sim_new+(Tot_new[t,1:6]-pred_new)^2/pred_new
+          Chi2_new[t] = sum((Y_new[t,]-pred_new)^2/pred_new)
+          Chi2_sim_new[t] = sum((Tot_new[t,1:6]-pred_new)^2/pred_new)
         }
         Diff_new[t,] = Tot_new[t,]-Tot_new[t-1,]
         t1 = TT+t
@@ -269,9 +291,6 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
         phi = dgamma(1:(t1-2),shape=1.87,rate=0.28)
         phi = phi/sum(phi)
         Rt_new[t] = newill[t1]/sum(phi*newill[(t1-1):2])
-      }
-      if(!is.null(Y_new)){
-        Chi2_new = sum(chi2_new); Chi2_sim_new = sum(chi2_sim_new)
       }
     }
 
@@ -288,8 +307,8 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
       CHI2[r1] = Chi2
       CHI2_SIM[r1] = Chi2_sim
       if(!is.null(Y_new)){
-        CHI2_new[r1] = Chi2_new
-        CHI2_SIM_new[r1] = Chi2_sim_new
+        CHI2_new[r1,] = Chi2_new
+        CHI2_SIM_new[r1,] = Chi2_sim_new
       }
     }
 
@@ -298,9 +317,10 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
       tt = proc.time()[3]; names(tt) = NULL
       print(c(iteration=r,acc_tab=acctab/it,acc_be=accbe/it,time100=100*(tt-t0)/it))
       if(disp){
-      	cat("\n")
+        print(Accbe)
+        cat("\n")
       	print("last matrix of OR")
-        print(round(LA[,,TT],6))
+        print(round(ORC[,,TT],6))
       	cat("\n")
       	print("last table")
         print(cbind(TAB[,,TT],NA,round(Y[TT-1,]*PP[,,TT])))
@@ -314,23 +334,25 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
       	print(round(c(Chi2,Chi2_sim),2))
       	if(!is.null(Y_new)){
         	print("Chi2 for observed and predicted data (forecast)")
-        	print(round(c(Chi2_new,Chi2_sim_new),2))
+        	print(round(cbind(Chi2_new,Chi2_sim_new),2))
       	}
-        if(r>=tin){
-      	  print("mean of chi2 and posterior p-value")
-      	  print(c(mean(CHI2[1:r1]),mean(CHI2_SIM[1:r1])))
+      	if(r>=tin){
+          print("mean of chi2 and posterior p-value")
+          print(c(mean(CHI2[1:r1]),mean(CHI2_SIM[1:r1])))
       	  print(mean(CHI2_SIM[1:r1]>CHI2[1:r1]))
       	  if(!is.null(Y_new)){
         	  print("mean of chi2 and posterior p-value (forecast)")
-        	  print(c(mean(CHI2_new[1:r1]),mean(CHI2_SIM_new[1:r1])))
-        	  print(mean(CHI2_SIM_new[1:r1]>CHI2_new[1:r1]))
+            Tmp = NULL
+            for(t in 1:tahead1) Tmp = rbind(Tmp,c(mean(CHI2_new[1:r1,t]),mean(CHI2_SIM_new[1:r1,t]),
+                                                  mean(CHI2_SIM_new[1:r1,t]>CHI2_new[1:r1,t])))
+            print(Tmp)
       	  }
       	}
       	cat("\n")
         cat("Predicted Rt\n")
         print(head(Rt))
         cat("\n")
-      }      
+      }
       if(r>tin & disp){
         mTot_new = apply(TOT_new[,,1:round(r/tin)],1:2,mean)
         colnames(mTot_new) = c(categories,"now_pos","tot_pos")
@@ -379,16 +401,20 @@ multinomAR_mcmc <- function(Y,R=10000,burnin=1000,mBE=NULL,VBE=NULL,Tau=matrix(0
              mDiff_new=mDiff_new,lwDiff_new=lwDiff_new,upDiff_new=upDiff_new,
              mRt_new=mRt_new,lwRt_new=lwRt_new,upRt_new=upRt_new,
              acctab=acctab/(R+burnin),accbe=accbe/(R+burnin),Accbe=Accbe/(R+burnin),
-             CHI2=CHI2,CHI2_SIM=CHI2_SIM,ppvalue = mean(CHI2_SIM>CHI2),Y=Y,call = match.call())
-              if(!is.null(Y_new)){
-                out$CHI2_new=CHI2_new; out$CHI2_SIM_new=CHI2_SIM_new
-                out$ppvalue_new = mean(CHI2_SIM_new>CHI2_new)
-              }
+             CHI2=CHI2,CHI2_SIM=CHI2_SIM,
+             CHI2_new = CHI2_new,
+             ppvalue_new =  colMeans(CHI2_SIM_new>CHI2_new),
+             ppvalue = mean(CHI2_SIM>CHI2),
+             Y=Y,call = match.call())
+  if(is.null(Y_new)){
+    out$CHI2_new=CHI2_new; out$CHI2_SIM_new=CHI2_SIM_new
+    out$ppvalue_new = colMeans(CHI2_SIM_new>CHI2_new)
+  }
   if(output){
     out$TTAB = TTAB; out$BBE = BBE; out$RT = RT; out$TTAB_new = TTAB_new
     out$TOT_new = TOT_new; out$RT_new = RT_new; out$DIFF_new = DIFF_new
   }
-  class(out) = "multinomAR"
+  class(out) = "dirmultAR"
   return(out)
 
 }
